@@ -8,7 +8,7 @@ pipeline {
 
 		stage('Build') {
 			steps {
-				echo 'Building..${params.OracleVersion}'
+				echo "Building..${params.OracleVersion}"
 			}
 		}
 
