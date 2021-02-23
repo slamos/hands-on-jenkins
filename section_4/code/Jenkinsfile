@@ -1,9 +1,11 @@
 #!/usr/bin/groovy
-pipeline {
-	agent any
-	node {
+
+node {
     		envList = "Oracle12c\nOracle19c"
 	     }
+pipeline {
+	agent any
+	
 
 	 parameters {
         	choice(choices: "${envList}", name: 'OracleVersion', description: 'please choose the Oracle version you want to deploy?')
