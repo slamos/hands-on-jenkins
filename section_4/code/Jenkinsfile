@@ -1,12 +1,14 @@
 #!/usr/bin/groovy
 pipeline {
 	agent any
-
+	parameters {
+        	string(name: 'OracleVersion', defaultValue: '12', description: 'How should I greet the world?')
+    	}
 	stages {
 
 		stage('Build') {
 			steps {
-				echo 'Building..'
+				echo 'Building..${params.OracleVersion}'
 			}
 		}
 
