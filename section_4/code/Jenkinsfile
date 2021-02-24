@@ -1,8 +1,8 @@
 #!/usr/bin/groovy
 
-node {
+
     		envList = "Oracle12c\nOracle19c"
-	     }
+
 pipeline {
 	agent any
 	
