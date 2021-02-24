@@ -12,6 +12,17 @@ pipeline {
    
    	 }
 	
+	choiceArray = [ "patch" , "minor" , "major" ]
+
+
+	parameters{
+            choice(choices: choiceArray.collect { "$it\n" }.join(' ') ,
+                    description: '',
+                    name: 'SOME_CHOICE')
+
+	}
+
+	
 	stages {
 
 		stage('Build') {
