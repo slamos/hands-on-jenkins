@@ -6,12 +6,12 @@ node {
 pipeline {
 	agent any
 	
-
+/*
 	 parameters {
         	choice(choices: "${envList}", name: 'OracleVersion', description: 'please choose the Oracle version you want to deploy?')
    
    	 }
-	
+*/	
 	choiceArray = [ "patch" , "minor" , "major" ]
 
 
