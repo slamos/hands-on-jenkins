@@ -1,37 +1,123 @@
-#!/usr/bin/groovy
+library "att-library-arev"
 
-
-    		envList = "Oracle12c\nOracle19c"
+dockerPrefix=attUtils.getPipelineUniqueName()
+DockerDNS = "--dns=10.233.170.12 --dns=10.233.170.14 --dns-search=pl01.microgen.group --dns-search=aptitude.software"
 
 pipeline {
-	agent any
+    options {	
+        timeout(time: 600, unit: 'MINUTES')
+        ansiColor('xterm')
+		buildDiscarder(logRotator(daysToKeepStr: '60', artifactDaysToKeepStr: '60')) 
+		quietPeriod(599)
+    }
+    agent {
+		docker {
+            image 'docker.artifactory.aptitudesoftware.com/arev-base:1.0'
+			args "--name ${dockerPrefix}-agent ${DockerDNS}"
+		}
+	}
 	
-
-	 parameters {
-        	choice(choices: ['greeting' , 'silence'], name: 'OracleVersion', description: 'please choose the Oracle version you want to deploy?')
+	parameters {
+        	choice(choices: ['Oracle12c SE' , 'Oracle19c SE'], name: 'OracleVersion', description: 'please choose the Oracle version you want to deploy?')
    
    	 }
+	triggers { 
+		pollSCM('H/10 * * * *') 
+	}
+    environment {  
+		MAVEN_REPO_PASSWORD = credentials('89277372-97f9-4ac4-be06-c4b82d5d01be')
+        DOCKER_HOST = "tcp://${NODE_NAME}:2375"   
+		ArtifactoryReportDir = "jenkins-results-revStream/report"
+		ArtifactoryArtifactsDir = "${ArtifactoryReportDir}/arev/${BRANCH_NAME}/${BUILD_NUMBER}/artifacts"
+		ArtifactoryTafBuildDir = "${ArtifactoryReportDir}/arev/${BRANCH_NAME}/${BUILD_NUMBER}/arev-taf"
+		artifactoryfilesbasepath = "${ArtifactoryTafBuildDir}/_log"
+		ArtifactoryGuiBuildDir = "${ArtifactoryReportDir}/arev/${BRANCH_NAME}/${BUILD_NUMBER}/arev-atl"
+		DockerPrefix = attUtils.getPipelineUniqueName()
+		IS_JENKINS = 1
+    }
+    stages {
+		stage('Build and publish') {
+			steps{
+				script {
+					dir("product") {
+						sh 'docker login -u jenkins -p $MAVEN_REPO_PASSWORD docker-testing.dev.aptitudesoftware.com'
+						withCredentials([usernamePassword(credentialsId: 'dce8b037-4df8-4e01-bde6-6bb10d15700c',
+							usernameVariable: 'SVN_USERNAME', passwordVariable: 'SVN_PASSWORD')]) {
+							sh './gradlew prepareEnv test publishArtifacts -Pdocker.name.prefix=${DockerPrefix} -Pdocker.fixedPorts=false -Pcode.coverage=true -Ptaf.artifactory.files-base-path=${artifactoryfilesbasepath} -Pselenium.env=grid'	
+						}
 
-	
-	stages {
+						junit testResults: 'test/arev-taf/build/test-results/**/*.xml', allowEmptyResults: true
+						junit testResults: 'test/arev-atl/build/test-results/**/*.xml', allowEmptyResults: true
 
-		stage('Build') {
-			steps {
-				echo "Building..${params.OracleVersion}"
+						releaseVersion = getValueFromIniFile('source/build/installer/config.properties','releaseName')
+						startCommit = getValueFromIniFile('source/build/installer/config.properties','upgradeStart')
+						endCommit = getValueFromIniFile('source/build/installer/config.properties','upgradeEnd')
+						releaseVersionFile = releaseVersion.replace(".", "_").replace(" ", "_")
+						releaseFile = "${releaseVersionFile}.zip"
+
+						releaseVersionETL = getValueFromIniFile('source/build/insights_installer/config.properties','releaseName')
+						startCommitETL = getValueFromIniFile('source/build/insights_installer/config.properties','upgradeStart')
+						endCommitETL = getValueFromIniFile('source/build/insights_installer/config.properties','upgradeEnd')
+						releaseVersionFileETL = releaseVersionETL.replace(".", "_").replace(" ", "_")
+						releaseFileETL = "${releaseVersionFileETL}.zip"
+
+						arevEnvFile = "arev-env-${releaseVersionFile}.zip"
+						currentBuild.description = "Host: ${NODE_NAME}"
+						currentBuild.description = currentBuild.description + "\nAREV Release: ${releaseVersion}\nStarting Rev: ${startCommit}\nEnding Rev: ${endCommit}"
+						currentBuild.description = currentBuild.description + "\nInsights Release: ${releaseVersionETL}\nStarting Rev: ${startCommitETL}\nEnding Rev: ${endCommitETL}"
+
+						attUtils.uploadToArtifactoryWithLinkToItAsLocalArtifact("environment/arev-base/build/docker-compose/docker-compose.yml","${ArtifactoryArtifactsDir}/docker-compose.yml","false", "docker-compose.yml")
+						attUtils.uploadToArtifactoryWithLinkToItAsLocalArtifact("environment/arev-base/build/distributions/${arevEnvFile}","${ArtifactoryArtifactsDir}/${arevEnvFile}","false", "${arevEnvFile}")
+						attUtils.uploadToArtifactoryWithLinkToItAsLocalArtifact("source/build/installer/packed/${releaseFile}","${ArtifactoryArtifactsDir}/${releaseFile}","false", "${releaseFile}")
+						attUtils.uploadToArtifactoryWithLinkToItAsLocalArtifact("source/build/insights_installer/packed/${releaseFileETL}","${ArtifactoryArtifactsDir}/${releaseFileETL}","false", "${releaseFileETL}")
+						attUtils.uploadToArtifactoryWithLinkToItAsLocalArtifact("source/build/coverage/report.html","${ArtifactoryTafBuildDir}/report.html","false", "test-TAF-coverage")
+
+						sh '[ -d "test/arev-taf/build/logs" ] && cd test/arev-taf/build/logs && zip -9r TAF_Logs2.zip . 1>/dev/null'
+						attUtils.uploadToArtifactory("test/arev-taf/build/logs/TAF_Logs2.zip","${ArtifactoryTafBuildDir}/_log2/TAF_Logs2.zip", "true")
+						sh '[ -d "test/arev-taf/build/taf/log" ] && cd test/arev-taf/build/taf/log && zip -9r TAF_Logs.zip . 1>/dev/null'
+						attUtils.uploadToArtifactory("test/arev-taf/build/taf/log/TAF_Logs.zip","${ArtifactoryTafBuildDir}/_log/TAF_Logs.zip", "true")
+						sh '[ -d "test/arev-taf/build/reports/tests/test" ] && cd test/arev-taf/build/reports/tests/test && zip -9r TAF_Reports.zip . 1>/dev/null'
+						attUtils.uploadToArtifactoryWithLinkToItAsLocalArtifact("test/arev-taf/build/reports/tests/test/TAF_Reports.zip","${ArtifactoryTafBuildDir}/TAF_Reports.zip","${ArtifactoryTafBuildDir}/index.html", "test-TAF-Report")
+
+						sh '[ -d "test/arev-atl/build/reports/tests/test" ] && cd test/arev-atl/build/reports/tests/test && zip -9r selenium-report.zip . 1>/dev/null'							
+						attUtils.uploadToArtifactory("test/arev-atl/build/reports/tests/test/selenium-report.zip","${ArtifactoryGuiBuildDir}/selenium-report.zip","true")
+
+						linkName = "test-ATL-Report"
+						urlInFile = "${ArtifactoryGuiBuildDir}/ExtentReport.html"
+						createLinkAsLocalArtifact(linkName, urlInFile)
+					}	
+				}		
 			}
 		}
-
-		stage('Test') {
-			steps {
-				echo 'Testing..'
+	}
+	post{							
+		always {
+			script{
+				dir ("product"){
+					sh "./gradlew clean"
+				}
+				attUtils.removeDockerContainersAndNetWithLabel(dockerPrefix)
+				attUtils.cleanup(true)
 			}
 		}
+	}
+}
 
-		stage('Deploy') {
-			steps {
-				echo 'Deploying....'
+def createLinkAsLocalArtifact(linkName,urlInFile){
+		baseUrl = "https://artifactory.aptitudesoftware.com/artifactory"
+		writeFile file: "${linkName}.html", text: "<!DOCTYPE html><html><head><meta http-equiv=\"refresh\" content=\"0; url=${baseUrl}/${urlInFile}\" allow-scripts/></head><body><p><a href=\"${baseUrl}/${urlInFile}\">Get file</a></p></body></html>"
+		archiveArtifacts allowEmptyArchive: true, artifacts: "${linkName}.html"
+}
+
+def getValueFromIniFile(iniFileName,paramName) {
+	tafStateline = readFile(iniFileName).trim().split("\n")
+	for (int i = 0; i <tafStateline.length; i++) {
+			tafStateLinePart = tafStateline[i].split("=")
+			if (tafStateLinePart[0].contains(paramName))
+			{
+				paramValue = tafStateLinePart[1]
+				attUtils.logger("INFO", paramName+": "+paramValue)
+				return paramValue
 			}
-		}
-
 	}
 }
