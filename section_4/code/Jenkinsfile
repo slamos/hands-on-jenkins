@@ -2,26 +2,15 @@
 
 node {
     		envList = "Oracle12c\nOracle19c"
-	choiceArray = [ "patch" , "minor" , "major" ]
 	     }
 pipeline {
 	agent any
 	
-/*
+
 	 parameters {
         	choice(choices: "${envList}", name: 'OracleVersion', description: 'please choose the Oracle version you want to deploy?')
    
    	 }
-*/	
-	
-
-
-	parameters{
-            choice(choices: choiceArray.collectEntries { "$it\n" }.join(' ') ,
-                    description: '',
-                    name: 'OracleVersion')
-
-	}
 
 	
 	stages {
