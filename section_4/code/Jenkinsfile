@@ -4,7 +4,9 @@
     		envList = "Oracle12c\nOracle19c"
 
 pipeline {
-	agent any
+	agent {
+        	docker { image 'node:14-alpine' }
+    	}
 	
 
 	 parameters {
