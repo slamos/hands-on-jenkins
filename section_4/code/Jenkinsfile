@@ -17,7 +17,7 @@ pipeline {
 
 
 	parameters{
-            choice(choices: choiceArray.collect { "$it\n" }.join(' ') ,
+            choice(choices: choiceArray.collectEntries { "$it\n" }.join(' ') ,
                     description: '',
                     name: 'OracleVersion')
 
